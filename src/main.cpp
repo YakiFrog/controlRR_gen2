@@ -30,12 +30,14 @@ int8_t addressByte = 0x00; // 0x00 = 0
 int8_t commandByte1 = 0x00; // 0x00 = 0
 int8_t commandByte2 = 0x00; // 0x00 = 0
 int8_t commandByte3 = 0x00; // 0x00 = 0
+int8_t commandByte4 = 0x00; // 0x00 = 0
 int8_t checksum = 0x00; // 0x00 = 0
 
 int8_t updwn_cmd = 0; // Up:1, Down:-1, Stop:0
 int8_t rollr_cmd = 0;
 int8_t rollr_spd_cmd = 0;
-bool prev_bttn_state[6] = {false, false, false, false, false, false}; // Share, Options, Left, Right, Touchpad, R1
+int8_t auto_updwn_cmd = 0; // 1, 2, 3
+bool prev_bttn_state[10] = {false, false, false, false, false, false, false, false, false, false}; // Share, Options, Left, Right, Touchpad, R1, ○, △, □, X
 
 float l_x = 0.0; // 左スティックのX軸
 float l_y = 0.0; // 左スティックのY軸
@@ -251,7 +253,7 @@ void loop() {
   }
 
   core1m_free_stack = uxTaskGetStackHighWaterMark(NULL);
-  delay(1);
+  delay(2);
 }
 
 void Core0a(void *args) {
@@ -289,19 +291,35 @@ void Core0a(void *args) {
       if (!PS4.Up() && !PS4.Down()){
         updwn_cmd = 0;
       }
-      if (PS4.Circle()) {
-        rollr_cmd = 1;
+      if (PS4.Circle() && prev_bttn_state[6] == false) {
+        if (PS4.L1()){
+          auto_updwn_cmd = 1;
+        } else {
+          rollr_cmd = 1;
+        }
       }
-      if (PS4.Triangle()) rollr_cmd = 2;
-      if (PS4.Square()) rollr_cmd = 3;
-      if (PS4.Cross()) { // 全て停止
-        updwn_cmd = 0;
-        rollr_cmd = 0;
-        rollr_spd_cmd = 0;
-        l_x = 0;
-        l_y = 0;
-        r_x = 0;
-        r_y = 0;
+      if (PS4.Triangle() && prev_bttn_state[7] == false) {
+        if (PS4.L1()){
+          auto_updwn_cmd = 2;
+        } else {
+          rollr_cmd = 2;
+        }
+      }
+      if (PS4.Square() && prev_bttn_state[8] == false) {
+        if (PS4.L1()){
+          auto_updwn_cmd = 3;
+        } else {
+          rollr_cmd = 3;
+        }
+      }
+      if (PS4.Cross() && prev_bttn_state[9] == false) { // 全て停止
+        if (PS4.L1()){
+          auto_updwn_cmd = 4;
+        } else {
+          updwn_cmd = 0;
+          rollr_cmd = 0;
+          rollr_spd_cmd = 0;
+        }
       }
       // 回収機構（開閉）デフォルト：開
       if (PS4.Share() && prev_bttn_state[0] == false){
@@ -348,7 +366,11 @@ void Core0a(void *args) {
       prev_bttn_state[2] = PS4.Left();
       prev_bttn_state[3] = PS4.Right();
       prev_bttn_state[4] = PS4.Touchpad();
-      prev_bttn_state[5] = PS4.R1();     
+      prev_bttn_state[5] = PS4.R1();  
+      prev_bttn_state[6] = PS4.Circle();
+      prev_bttn_state[7] = PS4.Triangle();
+      prev_bttn_state[8] = PS4.Square();
+      prev_bttn_state[9] = PS4.Cross();   
     } else {
       updwn_cmd = 0;
       rollr_cmd = 0;
@@ -363,7 +385,7 @@ void Core0a(void *args) {
     rstick_x = r_x * 200.0;
     rstick_y = r_y * 200.0;
     core0a_free_stack = uxTaskGetStackHighWaterMark(NULL);
-    delay(1);
+    delay(10);
   }
 }
 
@@ -372,14 +394,17 @@ void Core0b(void *args) {
     commandByte1 = updwn_cmd;
     commandByte2 = rollr_cmd;
     commandByte3 = rollr_spd_cmd;
-    checksum = int8_t(headerByte + addressByte + commandByte1 + commandByte2 + commandByte3);
+    commandByte4 = auto_updwn_cmd;
+    checksum = int8_t(headerByte + addressByte + commandByte1 + commandByte2 + commandByte3 + commandByte4);
     Serial2.write(headerByte);
     Serial2.write(addressByte);
     Serial2.write(commandByte1); // 昇降機構
     Serial2.write(commandByte2); // ローラー速度設定
     Serial2.write(commandByte3); // ローラー速度増減
+    Serial2.write(commandByte4); // 自動昇降機構
     Serial2.write(checksum);
     Serial2.flush(); // 送信が完了するまで待機
+    auto_updwn_cmd = 0;
     core0b_free_stack = uxTaskGetStackHighWaterMark(NULL);
     delay(10);
   }
